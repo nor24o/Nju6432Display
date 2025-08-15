@@ -1,7 +1,7 @@
 /*
  * Library for driving an NJU6432-based display.
  * File: Nju6432Display.h
- * Version: 5.0 (Final, Complete)
+ * Version: 5.1 (Updated to include _blinkBuffer for software blinking)
  */
 #ifndef NJU6432_DISPLAY_H
 #define NJU6432_DISPLAY_H
@@ -29,6 +29,7 @@ public:
     // -- High-Level "Framebuffer" Functions --
     void setChar(byte position, char character, bool decimalPoint = false);
     void print(const char* text, byte startPosition = 0);
+    void displayTemperature(float temp, byte startPosition = 0);
 
     // -- Brightness Control --
     void setBrightness(byte level); // 0 (off) to 255 (max)
@@ -83,6 +84,7 @@ private:
     bool _isBlinking = false, _blinkStateOn = true;
     unsigned int _blinkInterval = 500;
     unsigned long _lastBlinkTime = 0;
+    byte _blinkBuffer[14] = {0}; // Buffer for software blinking
 
     bool _isScrolling = false;
     char _scrollTextBuffer[NJU_MAX_SCROLL_TEXT_LENGTH];
@@ -100,6 +102,9 @@ private:
     int _scannerPos = 0, _scannerDir = 1;
     unsigned int _scannerSpeed = 50;
     unsigned long _lastScanTime = 0;
+
+        // Track length of last temperature displayed at each position
+    byte _lastTempLength[10] = {0}; // One for each display position
 };
 
 #endif // NJU6432_DISPLAY_H

@@ -18,6 +18,11 @@ Nju6432Display::Nju6432Display(byte dataPin, byte clockPin, byte chipEnablePin)
 void Nju6432Display::begin() {
     if (_inhibitPin != NJU_NO_PIN) {
         pinMode(_inhibitPin, OUTPUT);
+        digitalWrite(_inhibitPin, HIGH); // Ensure display is on initially
+        Serial.print("Inhibit pin set to OUTPUT: ");
+        Serial.println(_inhibitPin);
+    } else {
+        Serial.println("Inhibit pin is NJU_NO_PIN (3-pin mode), brightness control disabled");
     }
     pinMode(_dataPin, OUTPUT);
     pinMode(_clockPin, OUTPUT);
@@ -66,6 +71,10 @@ void Nju6432Display::updateDisplay() {
 void Nju6432Display::clear() {
     for (byte i = 0; i < 14; i++) {
         videoRam[i] = 0;
+    }
+        // Reset last temperature lengths
+    for (byte i = 0; i < NUM_CHAR_POSITIONS; i++) {
+        _lastTempLength[i] = 0;
     }
 }
 
@@ -124,28 +133,114 @@ void Nju6432Display::print(const char* text, byte startPosition) {
     }
 }
 
+void Nju6432Display::displayTemperature(float temp, byte startPosition) {
+    if (startPosition >= NUM_CHAR_POSITIONS) {
+        Serial.println("displayTemperature: Invalid start position, skipping");
+        return;
+    }
+
+    // Format temperature as a string (e.g., "-23.4", "43.5")
+    char tempStr[8]; // Enough for "-99.9" or "99.9"
+    dtostrf(temp, 5, 1, tempStr); // 5 chars total, 1 decimal place
+
+    // Trim leading/trailing spaces and count length
+    char formattedStr[8];
+    int len = 0;
+    bool isNegative = (tempStr[0] == '-');
+    int i = isNegative ? 1 : 0; // Skip minus sign initially
+    bool decimalFound = false;
+
+    // Build formatted string
+    if (isNegative) {
+        formattedStr[len++] = '-'; // Add minus sign
+    }
+    for (; tempStr[i] != '\0' && len < 7; i++) {
+        if (tempStr[i] == ' ') continue; // Skip spaces
+        if (tempStr[i] == '.') decimalFound = true;
+        formattedStr[len++] = tempStr[i];
+    }
+    formattedStr[len] = '\0';
+
+    // Check if temperature fits in remaining positions
+    if (startPosition + len > NUM_CHAR_POSITIONS) {
+        Serial.println("displayTemperature: Temperature string too long for display, skipping");
+        return;
+    }
+
+    // Clear previous temperature characters at startPosition
+    byte prevLength = _lastTempLength[startPosition];
+    for (byte pos = startPosition; pos < startPosition + prevLength && pos < NUM_CHAR_POSITIONS; pos++) {
+        setChar(pos, ' ', false); // Clear with blank character
+    }
+
+    // Display the temperature
+    Serial.print("Displaying temperature: ");
+    Serial.print(tempStr);
+    Serial.print(" at position ");
+    Serial.println(startPosition);
+
+    byte currentPos = startPosition;
+    for (int i = 0; formattedStr[i] != '\0' && currentPos < NUM_CHAR_POSITIONS; i++) {
+        bool dp = (formattedStr[i + 1] == '.');
+        setChar(currentPos, formattedStr[i], dp);
+        if (dp) i++; // Skip the decimal point
+        currentPos++;
+    }
+
+    // Store the length of the new temperature string
+    _lastTempLength[startPosition] = len;
+
+    updateDisplay();
+
+    // Update _blinkBuffer for software blinking compatibility
+    for (int i = 0; i < 14; i++) {
+        _blinkBuffer[i] = videoRam[i];
+    }
+}
+
 // -- ALL OTHER MODES --
 void Nju6432Display::setBrightness(byte level) {
-    if (_inhibitPin == NJU_NO_PIN) return;
+    if (_inhibitPin == NJU_NO_PIN) {
+        Serial.println("setBrightness: 3-pin mode, brightness control not available");
+        return;
+    }
     _brightness = level;
     if (!_isBlinking) {
-        analogWrite(_inhibitPin, _brightness);
+        Serial.print("Setting brightness to ");
+        Serial.print(level);
+        Serial.print(" on pin ");
+        Serial.println(_inhibitPin);
+        analogWrite(_inhibitPin, level);
+    } else {
+        Serial.println("setBrightness: Blinking is active, brightness change deferred");
     }
 }
 
 void Nju6432Display::startBlink(unsigned int interval) {
-    if (_inhibitPin == NJU_NO_PIN) return;
     stopAllModes();
     _blinkInterval = interval;
     _isBlinking = true;
     _lastBlinkTime = millis();
     _blinkStateOn = true;
+    // Store current videoRam state for blinking
+    for (int i = 0; i < 14; i++) {
+        _blinkBuffer[i] = videoRam[i];
+    }
+    Serial.print("Starting software blink with interval ");
+    Serial.print(interval);
+    Serial.println("ms (3-pin mode)");
+    updateDisplay(); // Ensure current content is displayed
 }
 
 void Nju6432Display::stopBlink() {
-    _isBlinking = false;
-    if (_inhibitPin != NJU_NO_PIN) {
-        setBrightness(_brightness);
+    if (_isBlinking) {
+        Serial.println("Stopping software blink");
+        _isBlinking = false;
+        // Restore original videoRam state
+        for (int i = 0; i < 14; i++) {
+            videoRam[i] = _blinkBuffer[i];
+        }
+        updateDisplay();
     }
 }
 
@@ -154,9 +249,20 @@ bool Nju6432Display::updateBlink() {
     if (millis() - _lastBlinkTime >= _blinkInterval) {
         _lastBlinkTime = millis();
         _blinkStateOn = !_blinkStateOn;
-        if (_inhibitPin != NJU_NO_PIN) {
-            analogWrite(_inhibitPin, _blinkStateOn ? _brightness : 0);
+        Serial.print("Software Blink: Display ");
+        Serial.println(_blinkStateOn ? "ON" : "OFF");
+        if (_blinkStateOn) {
+            // Restore original content
+            for (int i = 0; i < 14; i++) {
+                videoRam[i] = _blinkBuffer[i];
+            }
+        } else {
+            // Clear display
+            for (int i = 0; i < 14; i++) {
+                videoRam[i] = 0;
+            }
         }
+        updateDisplay();
     }
     return true;
 }
@@ -229,23 +335,45 @@ bool Nju6432Display::updateTypewriter() {
 void Nju6432Display::stopTypewriter() { _isTyping = false; }
 
 void Nju6432Display::fadeIn(const char* text, unsigned int stepDelay) {
-    if (_inhibitPin == NJU_NO_PIN) return;
+    if (_inhibitPin == NJU_NO_PIN) {
+        Serial.println("fadeIn: 3-pin mode, displaying text without fade");
+        print(text, 0);
+        updateDisplay();
+        return;
+    }
     stopAllModes();
     print(text, 0);
     updateDisplay();
+    Serial.println("Fading in text");
     for (int i = 0; i <= _brightness; i++) {
+        Serial.print("FadeIn: Setting brightness to ");
+        Serial.print(i);
+        Serial.print(" on pin ");
+        Serial.println(_inhibitPin);
         analogWrite(_inhibitPin, i);
         delay(stepDelay);
     }
 }
 
 void Nju6432Display::fadeOut(unsigned int stepDelay) {
-    if (_inhibitPin == NJU_NO_PIN) return;
+    if (_inhibitPin == NJU_NO_PIN) {
+        Serial.println("fadeOut: 3-pin mode, clearing display without fade");
+        clear();
+        updateDisplay();
+        return;
+    }
     stopAllModes();
+    Serial.println("Fading out display");
     for (int i = _brightness; i >= 0; i--) {
+        Serial.print("FadeOut: Setting brightness to ");
+        Serial.print(i);
+        Serial.print(" on pin ");
+        Serial.println(_inhibitPin);
         analogWrite(_inhibitPin, i);
         delay(stepDelay);
     }
+    clear();
+    updateDisplay();
 }
 
 void Nju6432Display::displayBarGraph(int value, int maxValue, bool fromCenter) {
@@ -297,12 +425,14 @@ void Nju6432Display::runDiagnostics(unsigned int delayMs) {
     stopAllModes();
     byte oldBrightness = _brightness;
     setBrightness(255);
+    Serial.println("Diagnostics: Lighting all segments");
     for (int i = 0; i < 14; i++) videoRam[i] = 0xFF;
     updateDisplay();
     delay(delayMs * 2);
     clear();
     updateDisplay();
     delay(delayMs);
+    Serial.println("Diagnostics: Testing each position with '8'");
     for (int i = 0; i < NUM_CHAR_POSITIONS; i++) {
         clear();
         setChar(i, 8, true);
