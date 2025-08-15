@@ -14,7 +14,7 @@ Nju6432Display::Nju6432Display(byte inhibitPin, byte dataPin, byte clockPin, byt
 Nju6432Display::Nju6432Display(byte dataPin, byte clockPin, byte chipEnablePin)
     : Nju6432Display(NJU_NO_PIN, dataPin, clockPin, chipEnablePin) {}
 
-// -- CORE FUNCTIONS --
+// -- CORE Functions --
 void Nju6432Display::begin() {
     if (_inhibitPin != NJU_NO_PIN) {
         pinMode(_inhibitPin, OUTPUT);
@@ -71,41 +71,43 @@ void Nju6432Display::clear() {
 
 // -- HIGH-LEVEL PRINTING --
 void Nju6432Display::setChar(byte position, char character, bool decimalPoint) {
-    // Map logical position (0 = leftmost) to hardware position (0 = S1, rightmost)
     if (position >= NUM_CHAR_POSITIONS) return;
-    int hw_index = NUM_CHAR_POSITIONS - 1 - position; // Reverse: position 0 -> S1, position 9 -> S10
+    int hw_index = NUM_CHAR_POSITIONS - 1 - position; // position 0 -> leftmost (S10), hw_index=9; position 9 -> rightmost (S1), hw_index=0
 
-    // Get the font pattern
     byte fontPattern = getCharacterFont(character);
     if (decimalPoint) fontPattern |= (1 << SEG_H);
 
-    // Clear the space for the new character
-    if (hw_index <= 5) { // S1–S6 (Bytes 0–5)
-        videoRam[hw_index] = 0;
-    } else if (hw_index >= 6 && hw_index < 10) { // S7–S10 (Bytes 6–9)
-        videoRam[hw_index] &= B00000001; // Preserve B segment of previous char
-        videoRam[hw_index + 1] &= B11111110; // Clear B segment of this char
-    }
-
-    // Write the character's data
-    if (hw_index <= 5) { // S1–S6
+    if (hw_index <= 5) { // S1-S6 (rightmost, normal bytes)
         videoRam[hw_index] = fontPattern;
-    } else if (hw_index >= 6 && hw_index < 10) { // S7–S10
+    } else { // S7-S10 (leftmost, split bytes)
         byte mainByte = 0;
-        byte b_segment_byte = 0;
+        byte b_segment = (fontPattern & (1 << SEG_B)) ? 1 : 0;
 
-        // Map font pattern to hardware layout
-        if (fontPattern & (1 << SEG_D)) mainByte |= (1 << 1); // D -> bit 1
-        if (fontPattern & (1 << SEG_H)) mainByte |= (1 << 2); // dp -> bit 2
-        if (fontPattern & (1 << SEG_E)) mainByte |= (1 << 3); // E -> bit 3
-        if (fontPattern & (1 << SEG_C)) mainByte |= (1 << 4); // C -> bit 4
-        if (fontPattern & (1 << SEG_F)) mainByte |= (1 << 5); // F -> bit 5
-        if (fontPattern & (1 << SEG_A)) mainByte |= (1 << 6); // A -> bit 6
-        if (fontPattern & (1 << SEG_G)) mainByte |= (1 << 7); // G -> bit 7
-        if (fontPattern & (1 << SEG_B)) b_segment_byte |= (1 << 0); // B -> bit 0 of next byte
-
-        videoRam[hw_index] |= mainByte;
-        videoRam[hw_index + 1] |= b_segment_byte;
+        if (hw_index == 6) { // S7, special mapping with skip at bit 4
+            videoRam[hw_index] = 0; // Fully clear, no previous B to preserve
+            mainByte |= (fontPattern & (1 << SEG_D)) ? (1 << 0) : 0;
+            mainByte |= (fontPattern & (1 << SEG_H)) ? (1 << 1) : 0;
+            mainByte |= (fontPattern & (1 << SEG_E)) ? (1 << 2) : 0;
+            mainByte |= (fontPattern & (1 << SEG_C)) ? (1 << 3) : 0;
+            mainByte |= (fontPattern & (1 << SEG_F)) ? (1 << 5) : 0;
+            mainByte |= (fontPattern & (1 << SEG_A)) ? (1 << 6) : 0;
+            mainByte |= (fontPattern & (1 << SEG_G)) ? (1 << 7) : 0;
+            videoRam[hw_index] = mainByte;
+            videoRam[hw_index + 1] &= 0b11111110; // Clear B bit
+            videoRam[hw_index + 1] |= b_segment;
+        } else { // S8-S10, standard shifted mapping
+            videoRam[hw_index] &= 0b00000001; // Preserve previous B in bit 0
+            mainByte |= (fontPattern & (1 << SEG_D)) ? (1 << 1) : 0;
+            mainByte |= (fontPattern & (1 << SEG_H)) ? (1 << 2) : 0;
+            mainByte |= (fontPattern & (1 << SEG_E)) ? (1 << 3) : 0;
+            mainByte |= (fontPattern & (1 << SEG_C)) ? (1 << 4) : 0;
+            mainByte |= (fontPattern & (1 << SEG_F)) ? (1 << 5) : 0;
+            mainByte |= (fontPattern & (1 << SEG_A)) ? (1 << 6) : 0;
+            mainByte |= (fontPattern & (1 << SEG_G)) ? (1 << 7) : 0;
+            videoRam[hw_index] |= mainByte;
+            videoRam[hw_index + 1] &= 0b11111110; // Clear B bit
+            videoRam[hw_index + 1] |= b_segment;
+        }
     }
 }
 
