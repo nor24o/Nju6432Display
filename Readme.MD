@@ -376,7 +376,7 @@ This library is provided as-is for educational and personal use. No warranty is 
 For issues or feature requests, please describe the problem, expected behavior, and any Serial output or display anomalies.
 
 ## Phisical segment MAP - from right to left 
-
+```cpp
 Bit Position:  0  ->  Byte[0],   Bit(0) = S1 D
 Bit Position:  1  ->  Byte[0],   Bit(1) = S1 dp
 Bit Position:  2  ->  Byte[0],   Bit(2) = S1 E
@@ -499,3 +499,4 @@ Bit Position: 108  ->  Byte[13], Bit(4) = simbol ---NOT USED--
 Bit Position: 109  ->  Byte[13], Bit(5) = simbol ---NOT USED--
 Bit Position: 110  ->  Byte[13], Bit(6) = simbol ---NOT USED--
 Bit Position: 111  ->  Byte[13], Bit(7) = simbol ---NOT USED--
+```
