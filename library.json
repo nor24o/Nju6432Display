@@ -1,0 +1,31 @@
+{
+  "name": "Nju6432Display",
+  "version": "5.1.0",
+  "description": "A library for driving NJU6432-based LCDs, offering control over characters, icons, and animations like scrolling and blinking.",
+  "keywords": [
+    "lcd",
+    "display",
+    "nju6432",
+    "driver",
+    "7-segment"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nor24o/Nju6432Display.git"
+  },
+  "authors": [
+    {
+      "name": "nor24o",
+      "url": "https://github.com/nor24o"
+    }
+  ],
+  "license": "MIT",
+  "frameworks": [
+    "arduino"
+  ],
+  "platforms": [
+    "atmelavr",
+    "espressif8266",
+    "espressif32"
+  ]
+}
